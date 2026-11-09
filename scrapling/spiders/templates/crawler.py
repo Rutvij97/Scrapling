@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from scrapling.spiders.links import LinkExtractor
+from scrapling.spiders.pagination import PaginationDetector
 from scrapling.spiders.request import Request
 from scrapling.spiders.spider import Spider
 from scrapling.core._types import (
@@ -55,14 +56,22 @@ class CrawlSpider(Spider):
 
     Override `rules()` to return a list of `CrawlRule`s.
 
+    Set `follow_pagination = True` to also follow the next page that `PaginationDetector` finds on every response,
+    with the same callback that handled the current page. Override `pagination_detector()` to customize detection.
+
     You can start from it and override it as needed for more custom functionality, or just implement your own spider.
     """
 
     crawl_strategy: Literal["bfs", "dfs"] = "bfs"
+    follow_pagination: bool = False
 
     def rules(self) -> List[CrawlRule]:
         """Override to define link-following rules."""
         return []
+
+    def pagination_detector(self) -> PaginationDetector:
+        """Override to return a `PaginationDetector` configured for your target website."""
+        return PaginationDetector()
 
     async def parse(self, response: "Response") -> AsyncGenerator[Union[Dict[str, Any], Request, None], None]:
         for rule in self.rules():
@@ -73,3 +82,8 @@ class CrawlSpider(Spider):
                 if rule.process_request is not None:
                     req = rule.process_request(req, response)
                 yield req
+
+        if self.follow_pagination:
+            next_url = self.pagination_detector().next_page(response)
+            if next_url:
+                yield response.follow(next_url)

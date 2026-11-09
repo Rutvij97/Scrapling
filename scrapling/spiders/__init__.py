@@ -5,6 +5,7 @@ from .engine import CrawlerEngine
 from .session import SessionManager
 from .spider import Spider, SessionConfigurationError
 from .links import LinkExtractor
+from .pagination import PaginationDetector
 from .templates import (
     CrawlSpider,
     SitemapSpider,
@@ -27,6 +28,7 @@ __all__ = [
     "Scheduler",
     "Response",
     "LinkExtractor",
+    "PaginationDetector",
     "CrawlSpider",
     "CrawlRule",
     "SitemapSpider",

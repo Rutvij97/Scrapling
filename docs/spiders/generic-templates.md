@@ -87,6 +87,22 @@ def rules(self):
     )]
 ```
 
+### Following pagination automatically
+
+Set `follow_pagination = True` and `CrawlSpider` also follows the next page that [`PaginationDetector`](#detecting-pagination-with-paginationdetector) finds on every response it parses, with the same callback that handled the current page. You don't have to write a pagination rule:
+
+```python
+class QuotesSpider(CrawlSpider):
+    name = "quotes"
+    start_urls = ["https://quotes.toscrape.com/"]
+    follow_pagination = True
+
+    def rules(self):
+        return [CrawlRule(LinkExtractor(allow=r"/author/"), callback=self.parse_author)]
+```
+
+It's off by default. Override `pagination_detector()` to return a `PaginationDetector` configured for your target website.
+
 ## SitemapSpider
 
 `SitemapSpider` seeds a crawl from sitemap.xml URLs. It uses the same `rules()` API as `CrawlSpider`, so the mental model is shared.
@@ -254,6 +270,48 @@ class CustomSpider(Spider):
     async def parse_post(self, response):
         yield {"title": response.css("h1::text").get()}
 ```
+
+## Detecting pagination with `PaginationDetector`
+
+`PaginationDetector` finds pagination links on a page without site-specific selectors. It only reads the page you give it and never makes requests by itself, so you can use it in any `Spider` callback:
+
+```python
+from scrapling.spiders import Spider, PaginationDetector
+
+class ListingSpider(Spider):
+    name = "listing"
+    start_urls = ["https://example.com/products"]
+    pagination = PaginationDetector()
+
+    async def parse(self, response):
+        for product in response.css(".product"):
+            yield {"name": product.css("h2::text").get()}
+
+        next_url = self.pagination.next_page(response)
+        if next_url:
+            yield response.follow(next_url)
+```
+
+`next_page(response)` returns the absolute URL of the next page, or `None` on the last page. `page_urls(response)` returns every pagination URL it finds (the next page first, then the previous and numbered pages).
+
+Signals are checked from the most to the least reliable, and the first match wins:
+
+1. A `rel="next"` link, either `<link>` in the head or `<a>`/`<area>` in the body.
+2. A link whose text, `aria-label`, or `title` is a "next" label (`Next`, `Next page`, `Older posts`, `Suivant`, `Siguiente`, `Weiter`, ...) or a single arrow (`›`, `»`, `→`). The whole label has to match, so `Read next article` is ignored.
+3. A link whose own or parent `class`/`id` has a `next` token (`next`, `pagination-next`, `nav-next`, ...).
+4. Inside a pagination container (an element whose `class`, `id`, or `aria-label` mentions pagination, a pager, or page numbers), the link numbered one after the current page.
+5. A link to the current URL with its page number incremented (`?page=7` becomes `?page=8`, `/page/7/` becomes `/page/8/`).
+
+Disabled links, links to the current page, `#`/`javascript:` links, and links to other domains are ignored.
+
+| Argument       | Default               | Description                                                                                  |
+|----------------|-----------------------|----------------------------------------------------------------------------------------------|
+| `next_texts`   | `DEFAULT_NEXT_TEXTS`  | Lower-case labels that mean "next page". Add your website's wording if it isn't covered.     |
+| `page_params`  | `DEFAULT_PAGE_PARAMS` | Query parameters that hold the page number (`page`, `p`, `pg`, `paged`, ...).                |
+| `same_domain`  | `True`                | Only return links on the same host as the page.                                              |
+| `canonicalize` | `True`                | Canonicalize the returned URLs, like `LinkExtractor` does.                                   |
+
+It's a heuristic: pages that load more results with JavaScript only (infinite scroll, "Load more" buttons without a link) have no URL to find, so it returns `None` for them.
 
 ## LinkExtractor reference
 
